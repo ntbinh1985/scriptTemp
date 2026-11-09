@@ -1,22 +1,23 @@
-(async function testFillCreateUserForm() {
-    console.log("=== BẮT ĐẦU TEST ĐIỀN FORM TẠO USER ===");
+(async function testFillCreateUserFormV2() {
+    console.log("=== BẮT ĐẦU TEST ĐIỀN FORM TẠO USER (V2) ===");
 
     // ==========================================
-    // 0. DỮ LIỆU TEST (Thay đổi dữ liệu tại đây)
+    // 0. DỮ LIỆU CẦN ĐIỀN
     // ==========================================
     const testData = {
-        maKH: "00123456",            // Thay bằng Mã khách hàng mẫu
-        maNV: "NV0099",              // Thay bằng Mã nhân viên mẫu
-        ngayHieuLuc: "09/11/2026",    // Định dạng dd/MM/yyyy
-        donVi: "HOI SO"              // Tên hoặc mã Đơn vị cần chọn
+        maKH: "03431837",            // Mã khách hàng
+        maNV: "02760",               // Mã nhân viên
+        ngayHieuLuc: "09/11/2026",   // Ngày hiệu lực dd/MM/yyyy
+        donVi: "069"                 // Điền Mã đơn vị (hoặc "HOI SO")
     };
 
     // ==========================================
-    // 1. TÌM DOCUMENT (Xử lý đa IFrame/Trang chủ)
+    // 1. TÌM DOCUMENT VÀ IFRAME
     // ==========================================
     let doc = document;
     let win = window;
-    const iframe = document.querySelector('iframe[src*="nguoi-dung"]') || 
+    const iframe = document.querySelector('iframe[src*="tao-moi-nguoi-dung"]') ||
+                   document.querySelector('iframe[src*="nguoi-dung"]') || 
                    document.querySelector('iframe[src*="user"]') ||
                    document.querySelector('div.window.active iframe');
 
@@ -25,169 +26,98 @@
         win = iframe.contentWindow;
         console.log("-> Đã phát hiện và truy cập vào IFrame:", iframe.src || iframe.id);
     } else {
-        console.log("-> Đang thao tác trực tiếp trên document chính (không có iframe)");
+        console.log("-> Thao tác trực tiếp trên document chính");
     }
 
-    // Helper delay
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     // ==========================================
-    // 2. HÀM CHỌN SELECT2 AJAX THEO LABEL (Dùng cho Mã KH & Mã NV)
+    // 2. HÀM TÌM VÀ ĐIỀN INPUT DỰA THEO NHÃN (LABEL)
     // ==========================================
-    async function selectLOVByLabel(labelText, searchValue) {
-        console.log(`\n[LOV] Đang xử lý trường: "${labelText}" với giá trị: "${searchValue}"...`);
+    async function setInputByLabel(labelText, value) {
+        console.log(`\n[INPUT] Đang điền trường "${labelText}": "${value}"...`);
 
-        // Tìm container chứa Label
-        const containers = Array.from(doc.querySelectorAll('section, label, div.form-group, div.col-sm-6'));
-        const targetContainer = containers.find(el => {
+        // Tìm tất cả các container/section/label chứa text
+        const allSections = Array.from(doc.querySelectorAll('section, div.row > div, div.form-group, label'));
+        const container = allSections.find(el => {
             const txt = el.textContent || "";
-            return txt.normalize('NFC').includes(labelText.normalize('NFC'));
+            // Kiểm tra khớp tương đối nhưng không lấy nhãn của mục con khác
+            return txt.normalize('NFC').includes(labelText.normalize('NFC')) && el.querySelector('input');
         });
 
-        if (!targetContainer) {
-            console.error(`❌ Không tìm thấy vùng chứa nhãn "${labelText}"`);
+        if (!container) {
+            console.error(`❌ Không tìm thấy vùng chứa nhãn: "${labelText}"`);
             return false;
         }
 
-        // Tìm Select2 container
-        const select2Btn = targetContainer.querySelector('.select2-selection') || 
-                           targetContainer.querySelector('span.select2');
-        if (!select2Btn) {
-            console.error(`❌ Không tìm thấy nút Select2 bên cạnh nhãn "${labelText}"`);
+        const input = container.querySelector('input');
+        if (!input) {
+            console.error(`❌ Không tìm thấy ô input của nhãn: "${labelText}"`);
             return false;
         }
 
-        // Mở popup dropdown
-        select2Btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-        select2Btn.click();
-        await sleep(250);
+        // Bỏ thuộc tính disabled/readonly tạm thời nếu có để điền
+        input.focus();
+        input.value = value;
 
-        // Tìm ô input gõ tìm kiếm (nằm trong doc của iframe hoặc doc ngoài)
-        const searchInput = doc.querySelector('input.select2-search__field') || 
-                            document.querySelector('input.select2-search__field');
-        if (!searchInput) {
-            console.error(`❌ Không tìm thấy ô input tìm kiếm của Select2`);
-            return false;
-        }
+        // Bắn chuỗi sự kiện để form Angular/jQuery/Liferay cập nhật model
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        
+        // Bắn phím Enter nếu hệ thống nghe phím Enter để trigger tìm kiếm
+        input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, key: 'Enter' }));
+        input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, keyCode: 13, key: 'Enter' }));
+        
+        // Mất tiêu điểm để trigger validate
+        input.dispatchEvent(new Event('blur', { bubbles: true }));
+        
+        console.log(`✔ Đã gán giá trị "${value}" vào input:`, input);
+        await sleep(500);
 
-        // Gõ giá trị tìm kiếm
-        searchInput.focus();
-        searchInput.value = searchValue;
-        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-        searchInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
-        console.log(`-> Đã gõ mã "${searchValue}", đang chờ AJAX trả kết quả...`);
+        // Kiểm tra xem có popup kết quả (Select2 hoặc Autocomplete menu) mở ra không
+        const autocompleteMenu = doc.querySelector('ul.ui-autocomplete:not([style*="display: none"])') ||
+                                 doc.querySelector('ul.select2-results__options') ||
+                                 doc.querySelector('.dropdown-menu.show');
 
-        // Đợi kết quả xuất hiện (Polling tối đa 6s)
-        const startTime = Date.now();
-        let targetItem = null;
-
-        while (Date.now() - startTime < 6000) {
-            const results = doc.querySelectorAll('ul.select2-results__options li.select2-results__option') || 
-                            document.querySelectorAll('ul.select2-results__options li.select2-results__option');
-
-            if (results && results.length > 0) {
-                for (let item of results) {
-                    if (!item.classList.contains('loading-results') && 
-                        !item.classList.contains('select2-results__message')) {
-                        targetItem = item;
-                        break;
-                    }
-                }
+        if (autocompleteMenu) {
+            const firstItem = autocompleteMenu.querySelector('li:not(.loading-results):not(.select2-results__message)');
+            if (firstItem) {
+                console.log(`-> Tìm thấy danh sách gợi ý, tự động click dòng đầu: "${firstItem.textContent.trim()}"`);
+                firstItem.click();
+                await sleep(400);
             }
-
-            if (targetItem) break;
-            await sleep(150);
         }
 
-        if (targetItem) {
-            console.log(`-> Đã tìm thấy kết quả: "${targetItem.textContent.trim()}". Bắt đầu click chọn...`);
-            targetItem.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-            targetItem.click();
-            await sleep(400); // Đợi hệ thống tự fill Tên đăng nhập/Tên NV
-            console.log(`✔ Đã chọn thành công trường: "${labelText}"`);
-            return true;
-        } else {
-            console.error(`❌ Quá thời gian (timeout) hoặc không có kết quả cho mã: "${searchValue}"`);
-            return false;
-        }
+        return true;
     }
 
     // ==========================================
-    // 3. THỰC THI LẦN LƯỢT 4 TRƯỜNG
+    // 3. THỰC THI ĐIỀN LẦN LƯỢT 4 TRƯỜNG
     // ==========================================
 
-    // Trường 1: Mã khách hàng
-    await selectLOVByLabel("Mã khách hàng", testData.maKH);
+    // 1. Mã khách hàng
+    await setInputByLabel("Mã khách hàng", testData.maKH);
 
-    // Trường 2: Mã nhân viên (chọn xong sẽ tự ra Tên NV & Tên đăng nhập)
-    await selectLOVByLabel("Mã nhân viên", testData.maNV);
+    // 2. Mã nhân viên
+    await setInputByLabel("Mã nhân viên", testData.maNV);
 
-    // Trường 3: Ngày hiệu lực
+    // 3. Ngày hiệu lực (#activeTime)
     console.log(`\n[DATE] Đang điền Ngày hiệu lực: "${testData.ngayHieuLuc}"...`);
-    let dateInput = doc.querySelector('#activeTime') || 
-                    doc.querySelector('input[name*="activeTime"]');
-
-    if (!dateInput) {
-        const labels = Array.from(doc.querySelectorAll('section, label, div.form-group'));
-        const dateContainer = labels.find(el => (el.textContent || "").normalize('NFC').includes("Ngày hiệu lực"));
-        if (dateContainer) dateInput = dateContainer.querySelector('input');
-    }
-
+    const dateInput = doc.querySelector('#activeTime') || doc.querySelector('input[name*="activeTime"]');
     if (dateInput) {
         dateInput.focus();
         dateInput.value = testData.ngayHieuLuc;
         dateInput.dispatchEvent(new Event('input', { bubbles: true }));
         dateInput.dispatchEvent(new Event('change', { bubbles: true }));
         dateInput.dispatchEvent(new Event('blur', { bubbles: true }));
-        console.log(`✔ Đã điền Ngày hiệu lực thành công vào selector:`, dateInput);
+        console.log(`✔ Đã cập nhật Ngày hiệu lực thành công`);
     } else {
-        console.error(`❌ Không tìm thấy ô Ngày hiệu lực (#activeTime)`);
+        console.error(`❌ Không tìm thấy ô #activeTime`);
     }
+    await sleep(300);
 
-    // Trường 4: Đơn vị
-    console.log(`\n[SELECT] Đang chọn Đơn vị: "${testData.donVi}"...`);
-    const containers = Array.from(doc.querySelectorAll('section, label, div.form-group, div.col-sm-6'));
-    const donViContainer = containers.find(el => {
-        const txt = el.textContent || "";
-        return txt.normalize('NFC').includes("Đơn vị".normalize('NFC'));
-    });
+    // 4. Đơn vị (Tìm input bên cạnh nhãn "Đơn vị")
+    await setInputByLabel("Đơn vị", testData.donVi);
 
-    let selectDonVi = null;
-    if (donViContainer) {
-        selectDonVi = donViContainer.querySelector('select');
-    }
-    if (!selectDonVi) {
-        selectDonVi = doc.querySelector('select#branch') || 
-                      doc.querySelector('select#orgUnit') || 
-                      doc.querySelector('select[name*="branch"]');
-    }
-
-    if (selectDonVi) {
-        let matched = false;
-        for (let i = 0; i < selectDonVi.options.length; i++) {
-            const optText = selectDonVi.options[i].text.normalize('NFC').toUpperCase();
-            const targetText = testData.donVi.normalize('NFC').toUpperCase();
-            if (optText.includes(targetText) || selectDonVi.options[i].value === testData.donVi) {
-                selectDonVi.selectedIndex = i;
-                selectDonVi.value = selectDonVi.options[i].value;
-                matched = true;
-                break;
-            }
-        }
-
-        if (matched) {
-            if (win.jQuery) {
-                win.jQuery(selectDonVi).trigger('change');
-            } else {
-                selectDonVi.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            console.log(`✔ Đã chọn Đơn vị thành công: "${testData.donVi}"`);
-        } else {
-            console.error(`❌ Không tìm thấy option khớp với Đơn vị: "${testData.donVi}"`);
-        }
-    } else {
-        console.error(`❌ Không tìm thấy thẻ select của Đơn vị`);
-    }
-
-    console.log("\n=== HOÀN TẤT KIỂM TRA FORM TẠO USER ===");
+    console.log("\n=== HOÀN TẤT ĐIỀN FORM ===");
 })();
