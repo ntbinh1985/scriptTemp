@@ -1,14 +1,14 @@
-(async function testFillCreateUserFormV4() {
-    console.log("=== BẮT ĐẦU TEST FORM TẠO USER (V4) ===");
+(async function testFillCreateUserFormV5() {
+    console.log("=== BẮT ĐẦU TEST FORM TẠO USER (V5 - FIX MATCHING) ===");
 
     // ==========================================
     // 0. DỮ LIỆU CẦN ĐIỀN
     // ==========================================
     const testData = {
-        maKH: "00003201",             // Mã khách hàng thực tế
-        maNV: "10421",                // Mã nhân viên thực tế
-        ngayHieuLuc: "09/11/2026",    // Ngày hiệu lực dd/MM/yyyy
-        donVi: "CHI NHANH VUNG TAU"   // Tên hoặc mã Đơn vị
+        maKH: "03398389",             // Mã khách hàng cần tìm
+        maNV: "10399",                // Mã nhân viên
+        ngayHieuLuc: "10/11/2026",    // Ngày hiệu lực dd/MM/yyyy
+        donVi: "TTKD"                 // Đơn vị
     };
 
     // ==========================================
@@ -29,20 +29,11 @@
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-    // Đóng popup cảnh báo/lỗi nếu đang hiện trên màn hình
-    const closeErrorModal = () => {
-        const btnClose = doc.querySelector('.modal.show button.close') || 
-                         doc.querySelector('.modal.show button[data-dismiss="modal"]') ||
-                         doc.querySelector('.modal-dialog button');
-        if (btnClose) btnClose.click();
-    };
-    closeErrorModal();
-
     // ==========================================
-    // 2. HÀM CHỌN SELECT2 CHUẨN XÁC THEO ID SELECT
+    // 2. HÀM CHỌN SELECT2 CÓ SO KHỚP CHÍNH XÁC NỘI DUNG
     // ==========================================
     async function selectLOVById(selectId, searchValue) {
-        console.log(`\n[LOV] Đang xử lý: ${selectId} -> Tìm: "${searchValue}"...`);
+        console.log(`\n[LOV] Đang xử lý: ${selectId} -> Tìm chính xác mã: "${searchValue}"...`);
 
         const selectElem = doc.querySelector(selectId);
         if (!selectElem) {
@@ -66,7 +57,7 @@
         select2Btn.click();
         await sleep(300);
 
-        // 3. Tìm ô input search đang mở (kiểm tra cả trong doc và body)
+        // 3. Tìm ô input search
         let searchInput = doc.querySelector('.select2-container--open input.select2-search__field') || 
                           doc.querySelector('input.select2-search__field') ||
                           document.querySelector('input.select2-search__field');
@@ -76,33 +67,47 @@
             return false;
         }
 
-        // 4. Gõ từ khóa và bắn sự kiện tìm kiếm
+        // 4. Xóa trắng ô tìm kiếm và gõ mã mới
         searchInput.focus();
+        searchInput.value = "";
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(100);
+
         searchInput.value = searchValue;
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
         
-        // Kích hoạt jQuery keyup nếu có để bắt trigger search AJAX của Select2
         if (win.jQuery) {
-            win.jQuery(searchInput).trigger('keyup');
+            win.jQuery(searchInput).val(searchValue).trigger('input').trigger('keyup');
         } else {
             searchInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
         }
 
-        console.log(`-> Đã gõ mã "${searchValue}", đang chờ danh sách kết quả...`);
+        console.log(`-> Đã gõ mã "${searchValue}", đang chờ kết quả khớp...`);
 
-        // 5. Đợi kết quả AJAX render (Polling tối đa 6s)
+        // Đợi tối thiểu 400ms để AJAX bắt đầu gửi request, tránh đọc nhầm kết quả cũ còn lưu
+        await sleep(400);
+
+        // 5. Đợi kết quả AJAX render và PHẢI CHỨA searchValue
         const startTime = Date.now();
         let targetItem = null;
+        const cleanSearchVal = searchValue.trim().toUpperCase();
 
-        while (Date.now() - startTime < 6000) {
+        while (Date.now() - startTime < 8000) {
             const results = doc.querySelectorAll('.select2-container--open ul.select2-results__options li.select2-results__option') ||
                             doc.querySelectorAll('ul.select2-results__options li.select2-results__option');
 
             if (results && results.length > 0) {
                 for (let item of results) {
-                    // Bỏ qua item báo loading hoặc không có kết quả
-                    if (!item.classList.contains('loading-results') && 
-                        !item.classList.contains('select2-results__message')) {
+                    // Bỏ qua item đang tải hoặc thông báo
+                    if (item.classList.contains('loading-results') || 
+                        item.classList.contains('select2-results__message')) {
+                        continue;
+                    }
+
+                    const itemText = (item.textContent || "").trim().toUpperCase();
+                    
+                    // ĐIỀU KIỆN QUAN TRỌNG: Item hiển thị PHẢI CHỨA mã đang tìm
+                    if (itemText.includes(cleanSearchVal)) {
                         targetItem = item;
                         break;
                     }
@@ -110,21 +115,21 @@
             }
 
             if (targetItem) break;
-            await sleep(150);
+            await sleep(200);
         }
 
-        // 6. Click chọn dòng đầu tiên tìm được
+        // 6. Click chọn kết quả đã khớp
         if (targetItem) {
-            console.log(`-> Tìm thấy kết quả: "${targetItem.textContent.trim()}". Bắt đầu click chọn...`);
+            console.log(`✔ Đã tìm thấy dòng KHỚP CHÍNH XÁC: "${targetItem.textContent.trim()}". Bắt đầu click...`);
             targetItem.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
             targetItem.click();
-            await sleep(600); // Chờ 600ms để hệ thống hoàn tất đổ dữ liệu sang các ô Tên, Email...
+            await sleep(600); // Đợi hệ thống tự fill các trường liên quan
             console.log(`✔ Đã chọn thành công ${selectId}`);
             return true;
         } else {
-            console.error(`❌ Quá thời gian chờ kết quả tìm kiếm cho ${selectId}: "${searchValue}"`);
-            // Bấm esc hoặc click ngoài để đóng dropdown nếu tìm không thấy
-            document.body.click();
+            console.error(`❌ Không tìm thấy kết quả nào chứa mã: "${searchValue}" sau 8 giây!`);
+            // Click đóng dropdown để tránh che màn hình
+            if (doc.body) doc.body.click();
             return false;
         }
     }
@@ -136,8 +141,7 @@
     // --- 1. Mã khách hàng ---
     await selectLOVById('select#customerCode', testData.maKH);
 
-    // --- 2. Mã nhân viên (Tự động kéo theo Tên NV, Tên đăng nhập, Email) ---
-    // Kiểm tra chính xác ID của select Mã nhân viên
+    // --- 2. Mã nhân viên ---
     let nvId = 'select#employeeCode';
     if (!doc.querySelector(nvId)) {
         const nvSelect = doc.querySelector('section:has(label:contains("Mã nhân viên")) select') ||
@@ -157,20 +161,16 @@
         dateInput.dispatchEvent(new Event('change', { bubbles: true }));
         dateInput.dispatchEvent(new Event('blur', { bubbles: true }));
         console.log(`✔ Đã điền Ngày hiệu lực vào #activeTime`);
-    } else {
-        console.error(`❌ Không tìm thấy ô Ngày hiệu lực (#activeTime)`);
     }
-    await sleep(300);
 
-    // --- 4. Đơn vị (Tự động cập nhật Phòng ban nếu có) ---
-    let dvId = 'select#branch';
+    // --- 4. Đơn vị ---
+    let dvId = 'select#branchUuid, select#branch';
     if (!doc.querySelector(dvId)) {
         const dvSelect = doc.querySelector('select[name*="branch"]') ||
-                         doc.querySelector('select#orgUnit') ||
-                         doc.querySelector('select[name*="unit"]');
+                         doc.querySelector('select#orgUnit');
         if (dvSelect) dvId = '#' + dvSelect.id;
     }
     await selectLOVById(dvId, testData.donVi);
 
-    console.log("\n=== HOÀN TẤT ĐIỀN FORM V4 ===");
+    console.log("\n=== HOÀN TẤT ĐIỀN FORM V5 ===");
 })();
