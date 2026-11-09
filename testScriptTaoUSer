@@ -1,5 +1,5 @@
-(async function testFillCreateUserFormV2() {
-    console.log("=== BẮT ĐẦU TEST ĐIỀN FORM TẠO USER (V2) ===");
+(async function testFillCreateUserFormV3() {
+    console.log("=== BẮT ĐẦU ĐIỀN FORM TẠO USER (V3) ===");
 
     // ==========================================
     // 0. DỮ LIỆU CẦN ĐIỀN
@@ -8,11 +8,11 @@
         maKH: "03431837",            // Mã khách hàng
         maNV: "02760",               // Mã nhân viên
         ngayHieuLuc: "09/11/2026",   // Ngày hiệu lực dd/MM/yyyy
-        donVi: "069"                 // Điền Mã đơn vị (hoặc "HOI SO")
+        donVi: "069"                 // Mã đơn vị (hoặc "HOI SO")
     };
 
     // ==========================================
-    // 1. TÌM DOCUMENT VÀ IFRAME
+    // 1. TRUY CẬP VÀO IFRAME FORM
     // ==========================================
     let doc = document;
     let win = window;
@@ -24,85 +24,76 @@
     if (iframe) {
         doc = iframe.contentDocument || iframe.contentWindow.document;
         win = iframe.contentWindow;
-        console.log("-> Đã phát hiện và truy cập vào IFrame:", iframe.src || iframe.id);
-    } else {
-        console.log("-> Thao tác trực tiếp trên document chính");
+        console.log("-> Đã truy cập vào IFrame:", iframe.src || iframe.id);
     }
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     // ==========================================
-    // 2. HÀM TÌM VÀ ĐIỀN INPUT DỰA THEO NHÃN (LABEL)
+    // 2. HÀM GÁN GIÁ TRỊ VÀO SELECT2 AJAX
     // ==========================================
-    async function setInputByLabel(labelText, value) {
-        console.log(`\n[INPUT] Đang điền trường "${labelText}": "${value}"...`);
-
-        // Tìm tất cả các container/section/label chứa text
-        const allSections = Array.from(doc.querySelectorAll('section, div.row > div, div.form-group, label'));
-        const container = allSections.find(el => {
-            const txt = el.textContent || "";
-            // Kiểm tra khớp tương đối nhưng không lấy nhãn của mục con khác
-            return txt.normalize('NFC').includes(labelText.normalize('NFC')) && el.querySelector('input');
-        });
-
-        if (!container) {
-            console.error(`❌ Không tìm thấy vùng chứa nhãn: "${labelText}"`);
+    function setSelect2Ajax(selector, value, text) {
+        const selectElem = doc.querySelector(selector);
+        if (!selectElem) {
+            console.error(`❌ Không tìm thấy phần tử select: ${selector}`);
             return false;
         }
 
-        const input = container.querySelector('input');
-        if (!input) {
-            console.error(`❌ Không tìm thấy ô input của nhãn: "${labelText}"`);
-            return false;
-        }
+        const displayText = text || value;
 
-        // Bỏ thuộc tính disabled/readonly tạm thời nếu có để điền
-        input.focus();
-        input.value = value;
-
-        // Bắn chuỗi sự kiện để form Angular/jQuery/Liferay cập nhật model
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-        
-        // Bắn phím Enter nếu hệ thống nghe phím Enter để trigger tìm kiếm
-        input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, key: 'Enter' }));
-        input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, cancelable: true, keyCode: 13, key: 'Enter' }));
-        
-        // Mất tiêu điểm để trigger validate
-        input.dispatchEvent(new Event('blur', { bubbles: true }));
-        
-        console.log(`✔ Đã gán giá trị "${value}" vào input:`, input);
-        await sleep(500);
-
-        // Kiểm tra xem có popup kết quả (Select2 hoặc Autocomplete menu) mở ra không
-        const autocompleteMenu = doc.querySelector('ul.ui-autocomplete:not([style*="display: none"])') ||
-                                 doc.querySelector('ul.select2-results__options') ||
-                                 doc.querySelector('.dropdown-menu.show');
-
-        if (autocompleteMenu) {
-            const firstItem = autocompleteMenu.querySelector('li:not(.loading-results):not(.select2-results__message)');
-            if (firstItem) {
-                console.log(`-> Tìm thấy danh sách gợi ý, tự động click dòng đầu: "${firstItem.textContent.trim()}"`);
-                firstItem.click();
-                await sleep(400);
+        // Nếu option chưa tồn tại, tạo mới và append vào thẻ select
+        if (win.jQuery) {
+            const $select = win.jQuery(selectElem);
+            if ($select.find(`option[value="${value}"]`).length === 0) {
+                const newOption = new Option(displayText, value, true, true);
+                $select.append(newOption);
             }
+            $select.val(value).trigger('change');
+            console.log(`✔ Đã set Select2 (${selector}) = "${value}" qua jQuery`);
+        } else {
+            // Fallback thuần nếu không có jQuery
+            let opt = selectElem.querySelector(`option[value="${value}"]`);
+            if (!opt) {
+                opt = doc.createElement('option');
+                opt.value = value;
+                opt.text = displayText;
+                opt.selected = true;
+                selectElem.appendChild(opt);
+            }
+            selectElem.value = value;
+            selectElem.dispatchEvent(new Event('change', { bubbles: true }));
+            console.log(`✔ Đã set Select2 (${selector}) = "${value}" qua Vanilla JS`);
         }
-
         return true;
     }
 
     // ==========================================
-    // 3. THỰC THI ĐIỀN LẦN LƯỢT 4 TRƯỜNG
+    // 3. THỰC THI LẦN LƯỢT CÁC TRƯỜNG
     // ==========================================
 
-    // 1. Mã khách hàng
-    await setInputByLabel("Mã khách hàng", testData.maKH);
+    // --- 1. Mã khách hàng ---
+    // Selector lấy chính xác từ DOM: select#customerCode
+    console.log(`\n[1] Đang điền Mã khách hàng: "${testData.maKH}"...`);
+    setSelect2Ajax('select#customerCode, select[name="customerCode"]', testData.maKH, testData.maKH);
+    await sleep(500);
 
-    // 2. Mã nhân viên
-    await setInputByLabel("Mã nhân viên", testData.maNV);
+    // --- 2. Mã nhân viên ---
+    // Tìm thẻ select trong section Mã nhân viên (thường là select#employeeCode hoặc select#userCode)
+    console.log(`\n[2] Đang điền Mã nhân viên: "${testData.maNV}"...`);
+    let nvSelector = 'select#employeeCode, select[name="employeeCode"], select#userCode';
+    if (!doc.querySelector(nvSelector)) {
+        // Fallback: Tìm thẻ select nằm trong section có label "Mã nhân viên"
+        const sections = Array.from(doc.querySelectorAll('section, div.col-sm-6'));
+        const nvSection = sections.find(el => (el.textContent || "").normalize('NFC').includes("Mã nhân viên") && el.querySelector('select'));
+        if (nvSection && nvSection.querySelector('select')) {
+            nvSelector = '#' + nvSection.querySelector('select').id;
+        }
+    }
+    setSelect2Ajax(nvSelector, testData.maNV, testData.maNV);
+    await sleep(500);
 
-    // 3. Ngày hiệu lực (#activeTime)
-    console.log(`\n[DATE] Đang điền Ngày hiệu lực: "${testData.ngayHieuLuc}"...`);
+    // --- 3. Ngày hiệu lực ---
+    console.log(`\n[3] Đang điền Ngày hiệu lực: "${testData.ngayHieuLuc}"...`);
     const dateInput = doc.querySelector('#activeTime') || doc.querySelector('input[name*="activeTime"]');
     if (dateInput) {
         dateInput.focus();
@@ -110,14 +101,24 @@
         dateInput.dispatchEvent(new Event('input', { bubbles: true }));
         dateInput.dispatchEvent(new Event('change', { bubbles: true }));
         dateInput.dispatchEvent(new Event('blur', { bubbles: true }));
-        console.log(`✔ Đã cập nhật Ngày hiệu lực thành công`);
+        console.log(`✔ Đã điền Ngày hiệu lực vào #activeTime`);
     } else {
-        console.error(`❌ Không tìm thấy ô #activeTime`);
+        console.error(`❌ Không tìm thấy ô Ngày hiệu lực (#activeTime)`);
     }
     await sleep(300);
 
-    // 4. Đơn vị (Tìm input bên cạnh nhãn "Đơn vị")
-    await setInputByLabel("Đơn vị", testData.donVi);
+    // --- 4. Đơn vị ---
+    console.log(`\n[4] Đang điền Đơn vị: "${testData.donVi}"...`);
+    let dvSelector = 'select#branch, select[name*="branch"], select#orgUnit, select#unitCode';
+    if (!doc.querySelector(dvSelector)) {
+        // Fallback: Tìm thẻ select nằm trong section có label "Đơn vị"
+        const sections = Array.from(doc.querySelectorAll('section, div.col-sm-6'));
+        const dvSection = sections.find(el => (el.textContent || "").normalize('NFC').includes("Đơn vị") && el.querySelector('select'));
+        if (dvSection && dvSection.querySelector('select')) {
+            dvSelector = '#' + dvSection.querySelector('select').id;
+        }
+    }
+    setSelect2Ajax(dvSelector, testData.donVi, testData.donVi);
 
-    console.log("\n=== HOÀN TẤT ĐIỀN FORM ===");
+    console.log("\n=== HOÀN TẤT ĐIỀN FORM V3 ===");
 })();
