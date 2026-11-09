@@ -1,14 +1,14 @@
-(async function testFillCreateUserFormV3() {
-    console.log("=== BẮT ĐẦU ĐIỀN FORM TẠO USER (V3) ===");
+(async function testFillCreateUserFormV4() {
+    console.log("=== BẮT ĐẦU TEST FORM TẠO USER (V4) ===");
 
     // ==========================================
     // 0. DỮ LIỆU CẦN ĐIỀN
     // ==========================================
     const testData = {
-        maKH: "03431837",            // Mã khách hàng
-        maNV: "02760",               // Mã nhân viên
-        ngayHieuLuc: "09/11/2026",   // Ngày hiệu lực dd/MM/yyyy
-        donVi: "069"                 // Mã đơn vị (hoặc "HOI SO")
+        maKH: "00003201",             // Mã khách hàng thực tế
+        maNV: "10421",                // Mã nhân viên thực tế
+        ngayHieuLuc: "09/11/2026",    // Ngày hiệu lực dd/MM/yyyy
+        donVi: "CHI NHANH VUNG TAU"   // Tên hoặc mã Đơn vị
     };
 
     // ==========================================
@@ -29,71 +29,126 @@
 
     const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+    // Đóng popup cảnh báo/lỗi nếu đang hiện trên màn hình
+    const closeErrorModal = () => {
+        const btnClose = doc.querySelector('.modal.show button.close') || 
+                         doc.querySelector('.modal.show button[data-dismiss="modal"]') ||
+                         doc.querySelector('.modal-dialog button');
+        if (btnClose) btnClose.click();
+    };
+    closeErrorModal();
+
     // ==========================================
-    // 2. HÀM GÁN GIÁ TRỊ VÀO SELECT2 AJAX
+    // 2. HÀM CHỌN SELECT2 CHUẨN XÁC THEO ID SELECT
     // ==========================================
-    function setSelect2Ajax(selector, value, text) {
-        const selectElem = doc.querySelector(selector);
+    async function selectLOVById(selectId, searchValue) {
+        console.log(`\n[LOV] Đang xử lý: ${selectId} -> Tìm: "${searchValue}"...`);
+
+        const selectElem = doc.querySelector(selectId);
         if (!selectElem) {
-            console.error(`❌ Không tìm thấy phần tử select: ${selector}`);
+            console.error(`❌ Không tìm thấy phần tử: ${selectId}`);
             return false;
         }
 
-        const displayText = text || value;
+        // 1. Tìm container Select2 tương ứng
+        const nextSpan = selectElem.nextElementSibling;
+        const select2Btn = (nextSpan && nextSpan.classList.contains('select2-container')) ? 
+                           nextSpan.querySelector('.select2-selection') : 
+                           doc.querySelector(`span[aria-labelledby*="${selectElem.id}"]`);
 
-        // Nếu option chưa tồn tại, tạo mới và append vào thẻ select
-        if (win.jQuery) {
-            const $select = win.jQuery(selectElem);
-            if ($select.find(`option[value="${value}"]`).length === 0) {
-                const newOption = new Option(displayText, value, true, true);
-                $select.append(newOption);
-            }
-            $select.val(value).trigger('change');
-            console.log(`✔ Đã set Select2 (${selector}) = "${value}" qua jQuery`);
-        } else {
-            // Fallback thuần nếu không có jQuery
-            let opt = selectElem.querySelector(`option[value="${value}"]`);
-            if (!opt) {
-                opt = doc.createElement('option');
-                opt.value = value;
-                opt.text = displayText;
-                opt.selected = true;
-                selectElem.appendChild(opt);
-            }
-            selectElem.value = value;
-            selectElem.dispatchEvent(new Event('change', { bubbles: true }));
-            console.log(`✔ Đã set Select2 (${selector}) = "${value}" qua Vanilla JS`);
+        if (!select2Btn) {
+            console.error(`❌ Không tìm thấy nút container Select2 của ${selectId}`);
+            return false;
         }
-        return true;
+
+        // 2. Mở dropdown Select2
+        select2Btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        select2Btn.click();
+        await sleep(300);
+
+        // 3. Tìm ô input search đang mở (kiểm tra cả trong doc và body)
+        let searchInput = doc.querySelector('.select2-container--open input.select2-search__field') || 
+                          doc.querySelector('input.select2-search__field') ||
+                          document.querySelector('input.select2-search__field');
+
+        if (!searchInput) {
+            console.error(`❌ Không tìm thấy ô search của Select2 khi mở ${selectId}`);
+            return false;
+        }
+
+        // 4. Gõ từ khóa và bắn sự kiện tìm kiếm
+        searchInput.focus();
+        searchInput.value = searchValue;
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        
+        // Kích hoạt jQuery keyup nếu có để bắt trigger search AJAX của Select2
+        if (win.jQuery) {
+            win.jQuery(searchInput).trigger('keyup');
+        } else {
+            searchInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
+        }
+
+        console.log(`-> Đã gõ mã "${searchValue}", đang chờ danh sách kết quả...`);
+
+        // 5. Đợi kết quả AJAX render (Polling tối đa 6s)
+        const startTime = Date.now();
+        let targetItem = null;
+
+        while (Date.now() - startTime < 6000) {
+            const results = doc.querySelectorAll('.select2-container--open ul.select2-results__options li.select2-results__option') ||
+                            doc.querySelectorAll('ul.select2-results__options li.select2-results__option');
+
+            if (results && results.length > 0) {
+                for (let item of results) {
+                    // Bỏ qua item báo loading hoặc không có kết quả
+                    if (!item.classList.contains('loading-results') && 
+                        !item.classList.contains('select2-results__message')) {
+                        targetItem = item;
+                        break;
+                    }
+                }
+            }
+
+            if (targetItem) break;
+            await sleep(150);
+        }
+
+        // 6. Click chọn dòng đầu tiên tìm được
+        if (targetItem) {
+            console.log(`-> Tìm thấy kết quả: "${targetItem.textContent.trim()}". Bắt đầu click chọn...`);
+            targetItem.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+            targetItem.click();
+            await sleep(600); // Chờ 600ms để hệ thống hoàn tất đổ dữ liệu sang các ô Tên, Email...
+            console.log(`✔ Đã chọn thành công ${selectId}`);
+            return true;
+        } else {
+            console.error(`❌ Quá thời gian chờ kết quả tìm kiếm cho ${selectId}: "${searchValue}"`);
+            // Bấm esc hoặc click ngoài để đóng dropdown nếu tìm không thấy
+            document.body.click();
+            return false;
+        }
     }
 
     // ==========================================
-    // 3. THỰC THI LẦN LƯỢT CÁC TRƯỜNG
+    // 3. THỰC THI LẦN LƯỢT 4 TRƯỜNG
     // ==========================================
 
     // --- 1. Mã khách hàng ---
-    // Selector lấy chính xác từ DOM: select#customerCode
-    console.log(`\n[1] Đang điền Mã khách hàng: "${testData.maKH}"...`);
-    setSelect2Ajax('select#customerCode, select[name="customerCode"]', testData.maKH, testData.maKH);
-    await sleep(500);
+    await selectLOVById('select#customerCode', testData.maKH);
 
-    // --- 2. Mã nhân viên ---
-    // Tìm thẻ select trong section Mã nhân viên (thường là select#employeeCode hoặc select#userCode)
-    console.log(`\n[2] Đang điền Mã nhân viên: "${testData.maNV}"...`);
-    let nvSelector = 'select#employeeCode, select[name="employeeCode"], select#userCode';
-    if (!doc.querySelector(nvSelector)) {
-        // Fallback: Tìm thẻ select nằm trong section có label "Mã nhân viên"
-        const sections = Array.from(doc.querySelectorAll('section, div.col-sm-6'));
-        const nvSection = sections.find(el => (el.textContent || "").normalize('NFC').includes("Mã nhân viên") && el.querySelector('select'));
-        if (nvSection && nvSection.querySelector('select')) {
-            nvSelector = '#' + nvSection.querySelector('select').id;
-        }
+    // --- 2. Mã nhân viên (Tự động kéo theo Tên NV, Tên đăng nhập, Email) ---
+    // Kiểm tra chính xác ID của select Mã nhân viên
+    let nvId = 'select#employeeCode';
+    if (!doc.querySelector(nvId)) {
+        const nvSelect = doc.querySelector('section:has(label:contains("Mã nhân viên")) select') ||
+                         doc.querySelector('select[name*="employee"]') ||
+                         doc.querySelector('select[name*="userCode"]');
+        if (nvSelect) nvId = '#' + nvSelect.id;
     }
-    setSelect2Ajax(nvSelector, testData.maNV, testData.maNV);
-    await sleep(500);
+    await selectLOVById(nvId, testData.maNV);
 
     // --- 3. Ngày hiệu lực ---
-    console.log(`\n[3] Đang điền Ngày hiệu lực: "${testData.ngayHieuLuc}"...`);
+    console.log(`\n[DATE] Đang điền Ngày hiệu lực: "${testData.ngayHieuLuc}"...`);
     const dateInput = doc.querySelector('#activeTime') || doc.querySelector('input[name*="activeTime"]');
     if (dateInput) {
         dateInput.focus();
@@ -107,18 +162,15 @@
     }
     await sleep(300);
 
-    // --- 4. Đơn vị ---
-    console.log(`\n[4] Đang điền Đơn vị: "${testData.donVi}"...`);
-    let dvSelector = 'select#branch, select[name*="branch"], select#orgUnit, select#unitCode';
-    if (!doc.querySelector(dvSelector)) {
-        // Fallback: Tìm thẻ select nằm trong section có label "Đơn vị"
-        const sections = Array.from(doc.querySelectorAll('section, div.col-sm-6'));
-        const dvSection = sections.find(el => (el.textContent || "").normalize('NFC').includes("Đơn vị") && el.querySelector('select'));
-        if (dvSection && dvSection.querySelector('select')) {
-            dvSelector = '#' + dvSection.querySelector('select').id;
-        }
+    // --- 4. Đơn vị (Tự động cập nhật Phòng ban nếu có) ---
+    let dvId = 'select#branch';
+    if (!doc.querySelector(dvId)) {
+        const dvSelect = doc.querySelector('select[name*="branch"]') ||
+                         doc.querySelector('select#orgUnit') ||
+                         doc.querySelector('select[name*="unit"]');
+        if (dvSelect) dvId = '#' + dvSelect.id;
     }
-    setSelect2Ajax(dvSelector, testData.donVi, testData.donVi);
+    await selectLOVById(dvId, testData.donVi);
 
-    console.log("\n=== HOÀN TẤT ĐIỀN FORM V3 ===");
+    console.log("\n=== HOÀN TẤT ĐIỀN FORM V4 ===");
 })();
